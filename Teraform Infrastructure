@@ -1,0 +1,76 @@
+variables.tf
+
+variable "project_id" { type = string }
+variable "region"     { type = string }
+variable "service_name" { type = string, default = "insight-agent" }
+
+main.tf
+
+resource "google_project" "project" {
+  project_id = var.project_id
+  name       = var.project_id
+}
+
+resource "google_project_service" "services" {
+  for_each = toset([
+    "artifactregistry.googleapis.com",
+    "run.googleapis.com",
+    "cloudbuild.googleapis.com"
+  ])
+  service = each.value
+  project = var.project_id
+}
+
+resource "google_artifact_registry_repository" "repo" {
+  provider = google
+  project  = var.project_id
+  location = var.region
+  repository_id = "${var.service_name}-repo"
+  format = "DOCKER"
+}
+
+resource "google_service_account" "run_sa" {
+  account_id   = "${var.service_name}-sa"
+  display_name = "Cloud Run service account"
+}
+
+resource "google_cloud_run_service" "service" {
+  name     = var.service_name
+  location = var.region
+  project  = var.project_id
+
+  template {
+    spec {
+      service_account_name = google_service_account.run_sa.email
+
+      containers {
+        image = var.image_uri
+        ports {
+          container_port = 8080
+        }
+      }
+    }
+  }
+
+  traffic {
+    percent         = 100
+    latest_revision = true
+  }
+
+  autogenerate_revision_name = true
+  ingress = "INTERNAL"
+}
+
+resource "google_artifact_registry_repository_iam_member" "run_access" {
+  project    = var.project_id
+  location   = var.region
+  repository = google_artifact_registry_repository.repo.repository_id
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:${google_cloud_run_service.service.spec[0].service_account_name}"
+}
+
+outputs.tf
+
+output "cloud_run_url" {
+  value = google_cloud_run_service.service.status[0].url
+}
