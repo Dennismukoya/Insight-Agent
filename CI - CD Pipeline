@@ -1,0 +1,42 @@
+yaml file
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      REGION: ${{ secrets.GCP_REGION }}
+    
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up GCP credentials
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Build Docker image
+        run: |
+          IMAGE="asia.gcr.io/$PROJECT_ID/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          docker build -t $IMAGE .
+
+      - name: Push to Artifact Registry
+        run: |
+          gcloud auth configure-docker $REGION-docker.pkg.dev
+          docker push $IMAGE
+
+      - name: Terraform init & apply
+        run: |
+          cd terraform
+          terraform init
+          terraform apply -auto-approve \
+            -var="project_id=$PROJECT_ID" \
+            -var="region=$REGION" \
+            -var="image_uri=$IMAGE"
