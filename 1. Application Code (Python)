@@ -1,0 +1,18 @@
+#1 Application Code (Python)
+
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+class Payload(BaseModel):
+    text: str
+
+app = FastAPI()
+
+@app.post("/analyze")
+async def analyze(payload: Payload):
+    text = payload.text
+    return {
+        "original_text": text,
+        "word_count": len(text.split()),
+        "character_count": len(text)
+    }
